@@ -14,169 +14,135 @@
 package main
 
 import (
-	"github.com/andlabs/ui"
-	"time"
+	"image"
 	"math"
 	"os"
+	"time"
+
+	"github.com/fogleman/gg"
 )
 
 type Renderer struct {
-	a         *ui.Area
-	dp        *ui.AreaDrawParams
-	model     Model
-    cameraMatrix M4
-	projector Projector
-	rotTime   float64 // seconds per rotation
+	a            *gg.Context
+	model        Model
+	cameraMatrix M4
+	projector    Projector
+	rotTime      float64 // seconds per rotation
 }
 
-func (r *Renderer) mainLoop() {
-	for {
-		r.a.QueueRedrawAll()
-		time.Sleep(time.Duration(50) * time.Millisecond)
-	}
+func (r *Renderer) frame() image.Image {
+	r.Draw(r.a)
+	return r.a.Image()
 }
 
-func (r *Renderer) drawModel(a *ui.Area, dp *ui.AreaDrawParams, model *Model) {
+func (r *Renderer) drawModel(dc *gg.Context, model *Model) {
 
-	path := ui.NewPath(ui.Winding)
 	for _, t := range model.triangles {
-		// back-face culling:
 		if Dot(t.v1, t.Normal()) < 0. &&
 			// frustum near-plane clipping:
 			t.v1.z <= r.projector.clipping && t.v2.z <= r.projector.clipping && t.v3.z <= r.projector.clipping {
 
 			point := r.projector.project(t.v1)
-			path.NewFigure(point.x, point.y)
+			dc.LineTo(point.x, point.y)
 
 			point = r.projector.project(t.v2)
-			path.LineTo(point.x, point.y)
+			dc.LineTo(point.x, point.y)
 
 			point = r.projector.project(t.v3)
-			path.LineTo(point.x, point.y)
-			path.CloseFigure()
+			dc.LineTo(point.x, point.y)
+
+			dc.SetLineWidth(1)
+			dc.Stroke()
 		}
 	}
-	path.End()
-
-	dp.Context.Stroke(path,
-		&ui.Brush{A:1, Type:ui.Solid},
-		&ui.StrokeParams{ui.FlatCap, ui.MiterJoin, 1, 2, nil, 1})
-	path.Free()
 }
 
-func (r *Renderer) Draw(a *ui.Area, dp *ui.AreaDrawParams) {
-	angle := (float64(time.Now().UnixNano() % (int64(r.rotTime * 1e9))) / 1e9) *
-				((2 * math.Pi) / r.rotTime)
-    mat := RotX(math.Pi/2.).Mul(RotY(rad(23.4))).Mul(RotZ(angle))
-    model := r.model.Clone().Apply(mat)
+func (r *Renderer) Draw(dc *gg.Context) {
+	angleZ := (float64(time.Now().UnixNano()%(int64(r.rotTime*1e9))) / 1e9) *
+		((2 * math.Pi) / r.rotTime)
+	angleY := (float64(time.Now().UnixNano()%(int64(r.rotTime*1e9/2))) / 1e9) *
+		((2 * math.Pi) / (r.rotTime / 2))
+	mat := RotX(math.Pi / 2.).Mul(RotY(angleY)).Mul(RotZ(angleZ))
+	model := r.model.Clone().Apply(mat)
 
-    r.drawModel(a, dp, model.Apply(r.cameraMatrix.Inverse()))
+	dc.SetHexColor("000")
+	dc.Clear()
+	dc.SetRGBA(1, 1, 1, 1)
+
+	r.drawModel(dc, model.Apply(r.cameraMatrix.Inverse()))
 }
 
-func (r Renderer) MouseEvent(a *ui.Area, me *ui.AreaMouseEvent) {
-	return
-}
-
-func (r Renderer) MouseCrossed(a *ui.Area, left bool) {
-	return
-}
-
-func (r Renderer) DragBroken(a *ui.Area) {
-	return
-}
-
+/*
 func (r *Renderer) KeyEvent(a *ui.Area, ke *ui.AreaKeyEvent) (handled bool) {
-    step := .25
+	step := .25
 
-    if !ke.Up {
-        tm := new(M4).SetIdentity()
+	if !ke.Up {
+		tm := new(M4).SetIdentity()
 
-        switch ke.Key {
-        case int32('w'):
-            tm = TransM(NewV4(0, 0, -step))
-        case int32('s'):
-            tm = TransM(NewV4(0, 0, step))
-        case int32('a'):
-            tm = TransM(NewV4(-step, 0, 0))
-        case int32('d'):
-            tm = TransM(NewV4(step, 0, 0))
-        }
+		switch ke.Key {
+		case int32('w'):
+			tm = TransM(NewV4(0, 0, -step))
+		case int32('s'):
+			tm = TransM(NewV4(0, 0, step))
+		case int32('a'):
+			tm = TransM(NewV4(-step, 0, 0))
+		case int32('d'):
+			tm = TransM(NewV4(step, 0, 0))
+		}
 
-        switch ke.ExtKey {
-        case ui.Left:
-            tm = RotY(rad(step*4))
-        case ui.Right:
-            tm = RotY(rad(-step*4))
-        }
-        r.cameraMatrix.Mul(tm)
-        return true
-    }
+		switch ke.ExtKey {
+		case ui.Left:
+			tm = RotY(rad(step * 4))
+		case ui.Right:
+			tm = RotY(rad(-step * 4))
+		}
+		r.cameraMatrix.Mul(tm)
+		return true
+	}
 	return
 }
-
+*/
 func rad(degrees float64) float64 {
 	return degrees * math.Pi / 180
 }
 
-func Cube() (*Model) {
+func Cube() *Model {
 	top := &Model{[]Triangle{
 		// counter-clockwise vertex winding
-		*NewTriangle(.5, .5, .5,  -.5, .5, .5,  -.5, -.5, .5),
-		*NewTriangle(-.5, -.5, .5,  .5, -.5, .5,  .5, .5, .5),
+		*NewTriangle(.5, .5, .5, -.5, .5, .5, -.5, -.5, .5),
+		*NewTriangle(-.5, -.5, .5, .5, -.5, .5, .5, .5, .5),
 	}}
 
 	cube := top.Merge(
-		*top.Clone().Rot(rad(180), 0, 0),	// bottom
-		*top.Clone().Rot(rad(90), 0, 0),	// north
-		*top.Clone().Rot(rad(-90), 0, 0),	// south
-		*top.Clone().Rot(0, rad(90), 0),	// west
-		*top.Clone().Rot(0, rad(-90), 0),	// east
+		*top.Clone().Rot(rad(180), 0, 0), // bottom
+		*top.Clone().Rot(rad(90), 0, 0),  // north
+		*top.Clone().Rot(rad(-90), 0, 0), // south
+		*top.Clone().Rot(0, rad(90), 0),  // west
+		*top.Clone().Rot(0, rad(-90), 0), // east
 	)
 	return cube
 }
 
-func main() {
+func get_renderer(filename string, w, h int) Renderer {
 	var model Model
-	if len(os.Args) > 1 {
-		f, err := os.Open(os.Args[1])
+	if filename != "" {
+		f, err := os.Open(filename)
 		if err != nil {
 			panic(err)
 		}
 		model = *NewSTLReader(f).ReadModel(true)
 		f.Close()
 	} else {
-		model = *Cube().Rot(math.Pi / 4, math.Pi / 4, math.Pi / 4)
+		model = *Cube().Rot(math.Pi/4, math.Pi/4, math.Pi/4)
 	}
 
-	err := ui.Main(func() {
-
-		renderer := Renderer{
-			a:    nil,
-			dp:        nil,
-			projector: *NewProjector(600, 52),
-			model: model,
-			cameraMatrix: *TransM(NewV4(0, 0, 2)),
-			rotTime: 30,	// seconds per full rotation
-		}
-		canvas := ui.NewArea(&renderer)
-		renderer.a = canvas
-
-		box := ui.NewVerticalBox()
-		box.Append(canvas, true)
-		window := ui.NewWindow("Perspective Projection", renderer.projector.size, renderer.projector.size, false)
-		window.SetMargined(false)
-		window.SetChild(box)
-		window.OnClosing(func(*ui.Window) bool {
-			ui.Quit()
-			return true
-		})
-		window.Show()
-
-		go func () {
-			renderer.mainLoop()
-		}()
-	})
-	if err != nil {
-		panic(err)
+	renderer := Renderer{
+		a:            gg.NewContext(w, h),
+		projector:    *NewProjector(h, 52),
+		model:        model,
+		cameraMatrix: *TransM(NewV4(0, 0, 2)),
+		rotTime:      5, // seconds per full rotation
 	}
+
+	return renderer
 }
